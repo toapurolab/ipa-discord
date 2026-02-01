@@ -1,14 +1,13 @@
-import {Client, EmbedBuilder, GatewayIntentBits, Message, OmitPartialGroupDMChannel, TextChannel} from "discord.js"
+import {Client, EmbedBuilder, GatewayIntentBits, TextChannel} from "discord.js"
 import "dotenv/config"
 import {IpaContext} from "./assets/context";
 import {Question} from "./assets/question";
+import {SessionManager} from "./session";
+import {TextMessage} from "./util";
 
 const targetChannelId = process.env.TARGET_CHANNEL
 
-// snowflake to question
-const questionSessions: Map<string, Question> = new Map<string, Question>()
-
-type TextMessage = OmitPartialGroupDMChannel<Message<boolean>>
+const sessions = new SessionManager("./sessions.json")
 
 const client = new Client({
     intents: [
@@ -54,24 +53,20 @@ async function onMessageReplied(msg: TextMessage, refId: string): Promise<Boolea
         return false
     }
 
-    if (msg.content == "!correct" || msg.content == "解答") {
-        const question = questionSessions.get(refId)
-        if (question == undefined) return true
+    const question = await sessions.getSession(refId);
+    if (question) {
+        if (msg.content == "!correct" || msg.content == "解答") {
+            await msg.channel.send(`# 問題#${question.id}\n正答: ${question.correct}\n## 解説\n\n${question.explanation}`)
 
-        await msg.channel.send(`# 問題#${question.id}\n正答: ${question.correct}\n## 解説\n\n${question.explanation}`)
+            setTimeout(
+                async () => await showProblem(msg.channel as TextChannel),
+                2000
+            )
+            return true
+        }
 
-        setTimeout(
-            async () => await showProblem(msg.channel as TextChannel),
-            2000
-        )
-        return true
-    }
-
-    const question = questionSessions.get(refId)
-    if (question != undefined) {
         const correct = msg.content.includes(question.correct);
         await msg.react(correct ? "⭕" : "❌")
-
         if (correct) {
             await showCorrectAnswer(msg, question, refId)
 
@@ -81,9 +76,9 @@ async function onMessageReplied(msg: TextMessage, refId: string): Promise<Boolea
             )
         }
         return true
-    } else {
-        return false
     }
+
+    return false
 }
 
 async function showProblem(channel: TextChannel) {
@@ -107,12 +102,12 @@ async function showProblem(channel: TextChannel) {
 
     const result = await channel.send({ embeds: [embed] })
 
-    questionSessions.set(result.id.toString(), question)
+    await sessions.openSession(result.id.toString(), question)
 }
 
 async function showCorrectAnswer(msg: TextMessage, question: Question, refId: string) {
     await msg.channel.send(`# 問題#${question.id}\n正答: ${question.correct}\n## 解説\n\n${question.explanation}`)
-    questionSessions.delete(refId)
+    await sessions.closeSession(refId)
 }
 
 client.login(`${process.env.DISCORD_TOKEN}`).then(() => {})

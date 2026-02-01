@@ -1,6 +1,6 @@
-type Option<T> = T | null
+import {Optional} from "../util";
 
-function req<T>(value: Option<T>, info = undefined): T {
+function req<T>(value: Optional<T>, info = undefined): T {
     if(value == undefined) {
         const e = new ReferenceError(`Required object is missing ${value}`)
         if(process.argv.includes("--verbose")) {
@@ -11,7 +11,7 @@ function req<T>(value: Option<T>, info = undefined): T {
     return value;
 }
 
-function reqTransform<T, R>(value: Option<T>, transformer: (v: T) => R, info = undefined): R {
+function reqTransform<T, R>(value: Optional<T>, transformer: (v: T) => R, info = undefined): R {
     return req(
         transformer(req(value, info)),
         info
@@ -27,7 +27,7 @@ export class QuestionOption {
         this.text = text;
     }
 
-    static tryParse(object: any): Option<QuestionOption> {
+    static tryParse(object: any): Optional<QuestionOption> {
         if(!object["id"]) return null;
 
         return new QuestionOption(
@@ -55,7 +55,7 @@ export class Question {
         this.explanation = explanation;
     }
 
-    static parse(object: any, from: string): Option<Question> {
+    static parse(object: any, from: string): Optional<Question> {
         return new Question(
             reqTransform(object["qNo"], parseInt, object),
             from,
