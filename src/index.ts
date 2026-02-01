@@ -1,11 +1,14 @@
-import {Client, EmbedBuilder, GatewayIntentBits, TextChannel} from "discord.js"
+import {Client, EmbedBuilder, GatewayIntentBits, Message, OmitPartialGroupDMChannel, TextChannel} from "discord.js"
 import "dotenv/config"
 import {IpaContext} from "./assets/context";
 import {Question} from "./assets/question";
 
 const targetChannelId = process.env.TARGET_CHANNEL
 
-const questionMap: Map<string, Question> = new Map<string, Question>()
+// snowflake to question
+const questionSessions: Map<string, Question> = new Map<string, Question>()
+
+type TextMessage = OmitPartialGroupDMChannel<Message<boolean>>
 
 const client = new Client({
     intents: [
@@ -25,49 +28,63 @@ client.on("ready", () => {
 })
 
 client.on("messageCreate", async msg => {
-    if (msg.channel.id != targetChannelId) {
-        return
-    }
-
-    if (msg.content == "!problem") {
-        await showProblem(msg.channel as TextChannel)
+    if(await onMessageCreate(msg)) {
         return
     }
 
     const refId = msg.reference?.messageId;
-    if(refId) {
-        if (msg.content == "!correct" || msg.content == "分からん") {
-            const question = questionMap.get(refId)
-            if(question == undefined) return
-
-            await msg.channel.send(`# 問題#${question.id}\n正答: ${question.correct}\n## 解説\n\n${question.explanation}`)
-
-            setTimeout(
-                async () => await showProblem(msg.channel as TextChannel),
-                2000
-            )
-            return
-        }
-
-        const question = questionMap.get(refId)
-        if(question == undefined) return
-
-        if(msg.content.includes(question.correct)) {
-            await msg.react("⭕")
-            await msg.reply("正解！")
-
-            await msg.channel.send(`# 問題#${question.id}\n正答: ${question.correct}\n## 解説\n\n${question.explanation}`)
-
-            setTimeout(
-                async () => await showProblem(msg.channel as TextChannel),
-                2000
-            )
-        } else {
-            await msg.react("❌")
-            await msg.reply("不正解")
-        }
+    if (refId && await onMessageReplied(msg, refId)) {
     }
 })
+
+async function onMessageCreate(msg: TextMessage): Promise<Boolean> {
+    if (msg.channel.id != targetChannelId) {
+        return false
+    }
+
+    if (msg.content == "!problem") {
+        await showProblem(msg.channel as TextChannel)
+        return true
+    }
+    return false
+}
+
+async function onMessageReplied(msg: TextMessage, refId: string): Promise<Boolean> {
+    if (msg.channel.id != targetChannelId) {
+        return false
+    }
+
+    if (msg.content == "!correct" || msg.content == "解答") {
+        const question = questionSessions.get(refId)
+        if (question == undefined) return true
+
+        await msg.channel.send(`# 問題#${question.id}\n正答: ${question.correct}\n## 解説\n\n${question.explanation}`)
+
+        setTimeout(
+            async () => await showProblem(msg.channel as TextChannel),
+            2000
+        )
+        return true
+    }
+
+    const question = questionSessions.get(refId)
+    if (question != undefined) {
+        const correct = msg.content.includes(question.correct);
+        await msg.react(correct ? "⭕" : "❌")
+
+        if (correct) {
+            await showCorrectAnswer(msg, question, refId)
+
+            setTimeout(
+                async () => await showProblem(msg.channel as TextChannel),
+                2000
+            )
+        }
+        return true
+    } else {
+        return false
+    }
+}
 
 async function showProblem(channel: TextChannel) {
     const questions = context.questions;
@@ -90,7 +107,12 @@ async function showProblem(channel: TextChannel) {
 
     const result = await channel.send({ embeds: [embed] })
 
-    questionMap.set(result.id.toString(), question)
+    questionSessions.set(result.id.toString(), question)
+}
+
+async function showCorrectAnswer(msg: TextMessage, question: Question, refId: string) {
+    await msg.channel.send(`# 問題#${question.id}\n正答: ${question.correct}\n## 解説\n\n${question.explanation}`)
+    questionSessions.delete(refId)
 }
 
 client.login(`${process.env.DISCORD_TOKEN}`).then(() => {})
